@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -99,11 +99,16 @@ export default async function (pi: ExtensionAPI) {
   let models: OllaModel[];
   try {
     models = await discoverModels(baseUrl);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[olla-autodetect] Failed to discover models from ${baseUrl}: ${message}`);
-    console.error(`[olla-autodetect] Provider "${providerName}" will have an empty model list.`);
-    console.error(`[olla-autodetect] To configure OLLA_BASE_URL, set the env var or create ${SETTINGS_FILE}`);
+  } catch {
+    const NOTIFIED_FLAG = join(PI_DIR, "olla", "notified.json");
+    if (!existsSync(NOTIFIED_FLAG)) {
+      console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
+      try {
+        writeFileSync(NOTIFIED_FLAG, JSON.stringify({ notified: Date.now() }), "utf8");
+      } catch {
+        // best-effort; don't crash over a notification flag
+      }
+    }
     models = [];
   }
 
