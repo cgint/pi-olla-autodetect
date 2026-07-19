@@ -47,26 +47,34 @@ Then run `/reload`.
 
 ## How It Works
 
-At startup (and on `/reload`), the extension fetches `/olla/openai/v1/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. No manual model entries needed.
+At startup (and on `/reload`), the extension fetches `{baseUrl}/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. No manual model entries needed.
 
 ## Configuration
 
 | Setting | Env var | Default | Description |
 |---------|---------|---------|-------------|
-| `baseUrl` | `OLLA_BASE_URL` | `http://127.0.0.1:40114` | Olla server URL |
+| `baseUrl` | `OLLA_BASE_URL` | `http://127.0.0.1:40114` | Olla server URL (any form accepted — host, host+prefix, host+prefix/v1 — normalized to `/v1`) |
 | `providerName` | `OLLA_PROVIDER_NAME` | `olla` | Provider name registered in pi |
 | `apiKey` | `OLLA_API_KEY` | `no-api-key-needed` | API key sent to Olla |
 
 Settings file: `~/.pi/olla/settings.json`
 
 ```json
-{ "baseUrl": "http://127.0.0.1:40114" }
+{ "baseUrl": "http://127.0.0.1:40114/olla/openai/v1" }
 ```
 
 Or override via environment variables:
 
 ```bash
-export OLLA_BASE_URL=http://pluto:40114
+export OLLA_BASE_URL=http://pluto:40114/olla/openai/v1
+```
+
+The extension normalizes any input format — bare host, host with prefix, or full `/v1` URL — so all of these work:
+
+```bash
+OLLA_BASE_URL=http://pluto:40114
+OLLA_BASE_URL=http://pluto:40114/olla/openai
+OLLA_BASE_URL=http://pluto:40114/olla/openai/v1
 ```
 
 ## Update Model List

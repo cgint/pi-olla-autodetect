@@ -45,6 +45,29 @@ function resolveApiKey(settings: OllaSettings): string {
 }
 
 // ---------------------------------------------------------------------------
+// URL normalization — ensure the URL ends with /v1 regardless of input
+// pattern (host, host/prefix, host/prefix/v1, host/prefix/v1/)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure the URL ends with /v1. Strips trailing slash, then appends /v1
+ * if not already ending with it.
+ *
+ * Examples:
+ *   "http://pluto:40114"                    → "http://pluto:40114/v1"
+ *   "http://pluto:40114/olla/openai"        → "http://pluto:40114/olla/openai/v1"
+ *   "http://pluto:40114/olla/openai/v1"     → "http://pluto:40114/olla/openai/v1"
+ *   "http://pluto:40114/olla/openai/v1/"    → "http://pluto:40114/olla/openai/v1"
+ */
+function ensureV1Url(raw: string): string {
+  let url = raw.replace(/\/+$/, "");
+  if (!url.endsWith("/v1")) {
+    url = `${url}/v1`;
+  }
+  return url;
+}
+
+// ---------------------------------------------------------------------------
 // Model discovery — fetch models from Olla's OpenAI-compatible endpoint
 // ---------------------------------------------------------------------------
 
@@ -61,11 +84,11 @@ interface OllaModelsResponse {
 }
 
 /**
- * Fetch the model list from Olla's unified models endpoint.
+ * Fetch the model list from Olla's models endpoint.
  * Uses a short timeout so a dead Olla doesn't block pi startup for long.
  */
-async function discoverModels(baseUrl: string): Promise<OllaModel[]> {
-  const url = `${baseUrl.replace(/\/+$/, "")}/olla/openai/v1/models`;
+async function discoverModels(v1Url: string): Promise<OllaModel[]> {
+  const url = `${v1Url}/models`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
@@ -93,12 +116,13 @@ async function discoverModels(baseUrl: string): Promise<OllaModel[]> {
 export default async function (pi: ExtensionAPI) {
   const settings = readSettings();
   const baseUrl = resolveBaseUrl(settings);
+  const v1Url = ensureV1Url(baseUrl);
   const providerName = resolveProviderName(settings);
   const apiKey = resolveApiKey(settings);
 
   let models: OllaModel[];
   try {
-    models = await discoverModels(baseUrl);
+    models = await discoverModels(v1Url);
   } catch {
     console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
     models = [];
@@ -106,7 +130,7 @@ export default async function (pi: ExtensionAPI) {
 
   pi.registerProvider(providerName, {
     name: "Olla Gateway",
-    baseUrl: `${baseUrl.replace(/\/+$/, "")}/olla/openai/v1`,
+    baseUrl: v1Url,
     api: "openai-completions",
     apiKey,
     models: models.map((m) => ({
