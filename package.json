@@ -1,6 +1,6 @@
 {
   "name": "pi-olla-autodetect",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that auto-discovers models from an Olla gateway endpoint and registers them as a provider.",
   "repository": {
     "type": "git",
