@@ -10,10 +10,10 @@ At startup (or `/reload`), the extension fetches `/olla/openai/v1/models` and re
 pi install https://github.com/cgint/pi-olla-autodetect
 ```
 
-Or add to `~/.pi/agent/settings.json` packages:
+For local development, install a checkout by replacing the path below with the directory where you cloned this repository:
 
-```json
-{ "packages": ["../../dev-external/pi-olla-autodetect"] }
+```bash
+pi install /path/to/pi-olla-autodetect
 ```
 
 Then run `/reload`.
@@ -22,14 +22,14 @@ Then run `/reload`.
 
 | Setting | Env var | Default | Description |
 |---------|---------|---------|-------------|
-| `baseUrl` | `OLLA_BASE_URL` | `http://pluto:40114` | Olla server URL |
+| `baseUrl` | `OLLA_BASE_URL` | `http://127.0.0.1:40114` | Olla server URL |
 | `providerName` | `OLLA_PROVIDER_NAME` | `olla` | Provider name registered in pi |
 | `apiKey` | `OLLA_API_KEY` | `no-api-key-needed` | API key sent to Olla |
 
 Settings file: `~/.pi/olla/settings.json`
 
 ```json
-{ "baseUrl": "http://pluto:40114" }
+{ "baseUrl": "http://127.0.0.1:40114" }
 ```
 
 ## Update model list

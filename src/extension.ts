@@ -11,7 +11,7 @@ const PI_DIR = join(homedir(), ".pi");
 const SETTINGS_FILE = join(PI_DIR, "olla", "settings.json");
 
 interface OllaSettings {
-  /** Olla server base URL (default: http://pluto:40114) */
+  /** Olla server base URL (default: http://127.0.0.1:40114) */
   baseUrl?: string;
   /** Provider name registered in pi (default: olla) */
   providerName?: string;
@@ -33,7 +33,7 @@ function readSettings(): OllaSettings {
 }
 
 function resolveBaseUrl(settings: OllaSettings): string {
-  return process.env["OLLA_BASE_URL"] ?? settings.baseUrl ?? "http://pluto:40114";
+  return process.env["OLLA_BASE_URL"] ?? settings.baseUrl ?? "http://127.0.0.1:40114";
 }
 
 function resolveProviderName(settings: OllaSettings): string {
