@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -100,15 +100,7 @@ export default async function (pi: ExtensionAPI) {
   try {
     models = await discoverModels(baseUrl);
   } catch {
-    const NOTIFIED_FLAG = join(PI_DIR, "olla", "notified.json");
-    if (!existsSync(NOTIFIED_FLAG)) {
-      console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
-      try {
-        writeFileSync(NOTIFIED_FLAG, JSON.stringify({ notified: Date.now() }), "utf8");
-      } catch {
-        // best-effort; don't crash over a notification flag
-      }
-    }
+    console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
     models = [];
   }
 
