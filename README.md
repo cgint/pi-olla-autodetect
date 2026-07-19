@@ -1,22 +1,53 @@
 # pi-olla-autodetect
 
-Pi extension that discovers models from an [Olla](https://github.com/thushan/olla) gateway and registers them as a provider via `pi.registerProvider()`.
+Pi extension that auto-discovers models from an [Olla](https://github.com/thushan/olla) gateway and registers them as a provider.
 
-At startup (or `/reload`), the extension fetches `/olla/openai/v1/models` and registers an `olla` provider with whatever models Olla reports.
+## Why
+
+In a homelab with multiple inference hosts, models start and stop on demand, endpoints change constantly, and maintaining a static `models.json` with dozens of direct provider entries becomes a chore.
+
+**pi-olla-autodetect removes that maintenance burden.** Instead of wiring each backend directly into Pi, you deploy one Olla gateway in front of your inference nodes and let this extension discover whatever models are currently available.
+
+```
+┌──────────────┐
+│  Pi agent    │  ← sees one stable "olla" provider
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  Olla gateway │  ← handles health checks, failover, routing
+└──────┬───────┘
+       │
+  ┌────┼────┐
+  ▼    ▼    ▼
+sparky sparkz twins
+```
+
+### Benefits
+
+- **One stable endpoint** — Pi points to Olla, not to individual inference hosts
+- **Automatic model discovery** — models appear in Pi as soon as Olla reports them; no `models.json` edits
+- **No stale entries** — when a model goes away, it disappears from Pi on `/reload`
+- **Health checks handled by Olla** — offline backends are dropped without client-facing errors
+- **Works alongside Open WebUI** — both Pi and Open WebUI can share the same Olla gateway
 
 ## Install
 
 ```bash
-pi install https://github.com/cgint/pi-olla-autodetect
+pi install npm:pi-olla-autodetect
 ```
 
-For local development, install a checkout by replacing the path below with the directory where you cloned this repository:
+For local development:
 
 ```bash
 pi install /path/to/pi-olla-autodetect
 ```
 
 Then run `/reload`.
+
+## How It Works
+
+At startup (and on `/reload`), the extension fetches `/olla/openai/v1/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. No manual model entries needed.
 
 ## Configuration
 
@@ -32,14 +63,20 @@ Settings file: `~/.pi/olla/settings.json`
 { "baseUrl": "http://127.0.0.1:40114" }
 ```
 
-## Update model list
+Or override via environment variables:
 
-`/reload` re-fetches models from Olla.
+```bash
+export OLLA_BASE_URL=http://pluto:40114
+```
+
+## Update Model List
+
+Run `/reload` in Pi to re-fetch the model catalogue from Olla.
 
 ## Requirements
 
 - pi >= 0.74.0
-- Reachable Olla gateway
+- A reachable Olla gateway with `model_registry.enable_unifier: true`
 
 ## License
 
