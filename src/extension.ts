@@ -85,12 +85,12 @@ interface OllaModelsResponse {
 
 /**
  * Fetch the model list from Olla's models endpoint.
- * Uses a short timeout so a dead Olla doesn't block pi startup for long.
+ * Uses a 2s timeout so a dead Olla doesn't block pi startup for long.
  */
 async function discoverModels(v1Url: string): Promise<OllaModel[]> {
   const url = `${v1Url}/models`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), 2_000);
 
   try {
     const response = await fetch(url, {
@@ -122,6 +122,7 @@ export default async function (pi: ExtensionAPI) {
 
   let models: OllaModel[];
   try {
+    console.log(`[olla] Discovering models from ${v1Url}...`);
     models = await discoverModels(v1Url);
   } catch {
     console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
