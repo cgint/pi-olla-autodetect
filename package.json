@@ -37,11 +37,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "precommit": "tsc --noEmit"
+    "test": "vitest run",
+    "precommit": "tsc --noEmit && vitest run"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.3",
     "@types/node": "^22.0.0",
-    "typescript": "^5.0.0"
+    "@vitest/runner": "^4.1.10",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.10"
   }
 }

@@ -87,15 +87,20 @@ interface OllaModelsResponse {
  * Fetch the model list from Olla's models endpoint.
  * Uses a 2s timeout so a dead Olla doesn't block pi startup for long.
  */
-async function discoverModels(v1Url: string): Promise<OllaModel[]> {
+export async function discoverModels(v1Url: string, apiKey?: string): Promise<OllaModel[]> {
   const url = `${v1Url}/models`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2_000);
 
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey && apiKey !== "no-api-key-needed") {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: "application/json" },
+      headers,
     });
 
     if (!response.ok) {
@@ -123,9 +128,10 @@ export default async function (pi: ExtensionAPI) {
   let models: OllaModel[];
   try {
     console.log(`[olla] Discovering models from ${v1Url}...`);
-    models = await discoverModels(v1Url);
-  } catch {
-    console.warn(`[olla] No local AI gateway found. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
+    models = await discoverModels(v1Url, apiKey);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.warn(`[olla] Model discovery failed: ${detail}. Olla models unavailable. Configure with OLLA_BASE_URL or ~/.pi/olla/settings.json.`);
     models = [];
   }
 
