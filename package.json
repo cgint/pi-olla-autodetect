@@ -41,10 +41,10 @@
     "precommit": "tsc --noEmit && vitest run"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.3",
-    "@types/node": "^22.0.0",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@types/node": "^26.2.0",
     "@vitest/runner": "^4.1.10",
-    "typescript": "^5.0.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
