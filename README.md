@@ -47,7 +47,11 @@ Then run `/reload`.
 
 ## How It Works
 
-At startup (and on `/reload`), the extension fetches `{baseUrl}/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. No manual model entries needed.
+At startup (and on `/reload`), the extension fetches `{baseUrl}/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. It reads Olla's public catalog (`/olla/models`) for each model's context window, using a conservative `262,144`-token fallback when catalog context is missing or invalid, and detailed status (`/internal/status/models?detailed=true`) for its configured backend type.
+
+### Backend compatibility
+
+Compatibility follows Olla's configured backend type, not model IDs or hosts. SGLang models receive a compatibility override that sends developer messages as `system` and omits `reasoning_effort`; vLLM models retain Pi's defaults. Unknown or unavailable status retains Pi defaults and emits a warning.
 
 ## Configuration
 
