@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import registerOllaProvider, { deriveOllaUrls, discoverModels } from "./extension.js";
+import registerOllaProvider, { deriveOllaUrls, discoverModels, parseCatalog } from "./extension.js";
 
 const discoveredModels = {
   object: "list",
@@ -11,8 +11,8 @@ const discoveredModels = {
 };
 
 const catalog = [
-  { id: "qwen3.8-27b-6000pro", olla: { max_context_length: 262144 } },
-  { id: "deepseek-v4-flash-dspark", olla: { max_context_length: 1048576 } },
+  { id: "qwen3.8-27b-6000pro", olla: { family: "qwen", max_context_length: 262144 } },
+  { id: "deepseek-v4-flash-dspark", olla: { family: "deepseek", max_context_length: 1048576 } },
 ];
 
 const detailedStatus = {
@@ -38,6 +38,13 @@ describe("Olla registration", () => {
   afterEach(() => {
     fetchSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+
+  it("parses dynamic Olla catalog family safely", () => {
+    expect(parseCatalog([{ id: "qwen", olla: { family: "qwen", max_context_length: 123 } }, { id: "invalid", olla: { family: 42 } }])).toEqual([
+      { id: "qwen", family: "qwen", maxContextLength: 123 },
+      { id: "invalid", family: undefined, maxContextLength: undefined },
+    ]);
   });
 
   it("derives Olla catalog and detailed-status URLs from a configured V1 URL", () => {
@@ -67,11 +74,31 @@ describe("Olla registration", () => {
       expect.objectContaining({
         id: "qwen3.8-27b-6000pro",
         contextWindow: 262144,
-        compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
+        compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, thinkingFormat: "qwen-chat-template" },
       }),
       expect.objectContaining({ id: "deepseek-v4-flash-dspark", contextWindow: 1048576 }),
     ]));
-    expect(models.find((model: { id: string }) => model.id === "deepseek-v4-flash-dspark")).not.toHaveProperty("compat");
+    const ds4 = models.find((model: { id: string }) => model.id === "deepseek-v4-flash-dspark");
+    expect(ds4).not.toHaveProperty("compat");
+    expect(ds4).not.toHaveProperty("thinkingLevelMap");
+    expect(ds4).not.toHaveProperty("thinkingFormat");
+  });
+
+  it.each(["deepseek", undefined])("keeps SGLang base compat and warns when catalog family is %s", async (family) => {
+    fetchSpy.mockImplementation(async (url: string) => {
+      if (url === "http://pluto:40114/olla/openai/v1/models") return response({ object: "list", data: [discoveredModels.data[0]] });
+      if (url === "http://pluto:40114/olla/models") return response([{ id: "qwen3.8-27b-6000pro", olla: { family } }]);
+      return response({ recent_models: [{ name: "qwen3.8-27b-6000pro", type: "sglang" }] });
+    });
+    const registerProvider = vi.fn();
+
+    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+
+    const model = registerProvider.mock.calls[0]?.[1].models[0];
+    expect(model).toMatchObject({ compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } });
+    expect(model.compat).not.toHaveProperty("thinkingFormat");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Qwen template control was not applied"));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("retaining SGLang base compatibility"));
   });
 
   it("registers models with default compatibility and warnings when detailed status rejects", async () => {

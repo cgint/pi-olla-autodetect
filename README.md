@@ -51,7 +51,7 @@ At startup (and on `/reload`), the extension fetches `{baseUrl}/models` from you
 
 ### Backend compatibility
 
-Compatibility follows Olla's configured backend type, not model IDs or hosts. SGLang models receive a compatibility override that sends developer messages as `system` and omits `reasoning_effort`; vLLM models retain Pi's defaults. Unknown or unavailable status retains Pi defaults and emits a warning.
+Compatibility follows dynamic Olla metadata, not model IDs or hosts. Every SGLang model receives a compatibility override that sends developer messages as `system` and omits `reasoning_effort`. Template thinking (`chat_template_kwargs.enable_thinking`) is added only when detailed status reports SGLang **and** the public catalog reports `olla.family: "qwen"`. SGLang models with missing or non-Qwen family metadata retain the base override and emit a warning that Qwen template control was not applied. vLLM models, including DS4/DeepSeek, retain Pi's defaults unchanged. Unknown or unavailable status retains Pi defaults and emits a warning.
 
 ## Configuration
 

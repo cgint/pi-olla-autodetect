@@ -22,6 +22,7 @@ export interface OllaModel {
 
 export interface OllaCatalogModel {
   id: string;
+  family?: string;
   maxContextLength?: number;
 }
 
@@ -30,7 +31,11 @@ export interface OllaModelStatus {
   type: string;
 }
 
-type CompatProfile = { supportsDeveloperRole: false; supportsReasoningEffort: false };
+type CompatProfile = {
+  supportsDeveloperRole: false;
+  supportsReasoningEffort: false;
+  thinkingFormat?: "qwen-chat-template";
+};
 type RegisteredModel = {
   id: string;
   name: string;
@@ -128,8 +133,12 @@ export function parseCatalog(body: unknown): OllaCatalogModel[] {
         : [];
   return records.flatMap((record) => {
     if (!record || typeof record !== "object" || typeof (record as { id?: unknown }).id !== "string") return [];
-    const maxContextLength = (record as { olla?: { max_context_length?: unknown } }).olla?.max_context_length;
-    return [{ id: (record as { id: string }).id, maxContextLength: typeof maxContextLength === "number" ? maxContextLength : undefined }];
+    const olla = (record as { olla?: { family?: unknown; max_context_length?: unknown } }).olla;
+    return [{
+      id: (record as { id: string }).id,
+      family: typeof olla?.family === "string" ? olla.family : undefined,
+      maxContextLength: typeof olla?.max_context_length === "number" ? olla.max_context_length : undefined,
+    }];
   });
 }
 
@@ -142,10 +151,15 @@ export function parseDetailedStatus(body: unknown): OllaModelStatus[] {
     : []);
 }
 
-export function resolveBackendProfile(status: OllaModelStatus | undefined): { compat?: CompatProfile; warning?: string } {
+export function resolveBackendProfile(status: OllaModelStatus | undefined, catalogModel?: OllaCatalogModel): { compat?: CompatProfile; warning?: string } {
   if (!status) return { warning: "no detailed status" };
   if (!(status.type in BACKEND_PROFILES)) return { warning: `unknown backend type ${status.type}` };
-  return { compat: BACKEND_PROFILES[status.type] };
+  const compat = BACKEND_PROFILES[status.type];
+  if (status.type === "sglang" && catalogModel?.family === "qwen") {
+    return { compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, thinkingFormat: "qwen-chat-template" } };
+  }
+  if (status.type === "sglang") return { compat, warning: "Qwen template control was not applied because catalog family is missing or not qwen" };
+  return { compat };
 }
 
 function contextWindow(maxContextLength: number | undefined): number {
@@ -160,8 +174,11 @@ export function buildRegisteredModels(models: OllaModel[], catalog: OllaCatalogM
   const statusByName = new Map(statuses.map((status) => [status.name, status]));
   const warnings: string[] = [];
   const registered = models.map((model) => {
-    const profile = resolveBackendProfile(statusByName.get(model.id));
-    if (profile.warning) warnings.push(`[olla] Model ${model.id}: ${profile.warning}; retaining Pi default compatibility.`);
+    const profile = resolveBackendProfile(statusByName.get(model.id), catalogById.get(model.id));
+    if (profile.warning) {
+      const retainedCompatibility = profile.compat ? "SGLang base compatibility" : "Pi default compatibility";
+      warnings.push(`[olla] Model ${model.id}: ${profile.warning}; retaining ${retainedCompatibility}.`);
+    }
     return {
       id: model.id,
       name: model.id,
