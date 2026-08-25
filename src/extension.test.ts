@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import registerOllaProvider, { deriveOllaUrls, discoverModels, parseCatalog } from "./extension.js";
+const { readFileSyncMock } = vi.hoisted(() => ({ readFileSyncMock: vi.fn() }));
+vi.mock("node:fs", () => ({ readFileSync: readFileSyncMock }));
+
+import registerOllaProvider, { buildRegisteredModels, discoverModels } from "./extension.js";
 
 const discoveredModels = {
   object: "list",
@@ -10,162 +13,99 @@ const discoveredModels = {
   ],
 };
 
-const catalog = [
-  { id: "qwen3.8-27b-6000pro", olla: { family: "qwen", max_context_length: 262144 } },
-  { id: "deepseek-v4-flash-dspark", olla: { family: "deepseek", max_context_length: 1048576 } },
-];
-
-const detailedStatus = {
-  recent_models: [
-    { name: "qwen3.8-27b-6000pro", type: "sglang" },
-    { name: "deepseek-v4-flash-dspark", type: "vllm" },
-  ],
-};
-
 function response(json: unknown): Response {
   return { ok: true, status: 200, statusText: "OK", json: async () => json } as Response;
 }
 
+const OLLA_ENV_KEYS = ["OLLA_BASE_URL", "OLLA_PROVIDER_NAME", "OLLA_API_KEY"] as const;
+type OllaEnvKey = typeof OLLA_ENV_KEYS[number];
+
+function saveOllaEnvironment(): Map<OllaEnvKey, string | undefined> {
+  return new Map(OLLA_ENV_KEYS.map((key) => [key, process.env[key]]));
+}
+
+function clearOllaEnvironment(): void {
+  for (const key of OLLA_ENV_KEYS) delete process.env[key];
+}
+
+function restoreOllaEnvironment(saved: Map<OllaEnvKey, string | undefined>): void {
+  for (const key of OLLA_ENV_KEYS) {
+    const value = saved.get(key);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
 describe("Olla registration", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let savedEnvironment: Map<OllaEnvKey, string | undefined>;
 
   beforeEach(() => {
+    savedEnvironment = saveOllaEnvironment();
+    clearOllaEnvironment();
+    readFileSyncMock.mockReset();
+    readFileSyncMock.mockImplementation(() => { throw new Error("settings unavailable"); });
     fetchSpy = vi.spyOn(global, "fetch");
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     fetchSpy.mockRestore();
-    warnSpy.mockRestore();
+    restoreOllaEnvironment(savedEnvironment);
   });
 
-  it("parses dynamic Olla catalog family safely", () => {
-    expect(parseCatalog([{ id: "qwen", olla: { family: "qwen", max_context_length: 123 } }, { id: "invalid", olla: { family: 42 } }])).toEqual([
-      { id: "qwen", family: "qwen", maxContextLength: 123 },
-      { id: "invalid", family: undefined, maxContextLength: undefined },
-    ]);
-  });
-
-  it("derives Olla catalog and detailed-status URLs from a configured V1 URL", () => {
-    expect(deriveOllaUrls("http://pluto:40114/olla/openai/v1")).toEqual({
-      catalogUrl: "http://pluto:40114/olla/models",
-      detailedStatusUrl: "http://pluto:40114/internal/status/models?detailed=true",
-    });
-  });
-
-  it("requests the public catalog and detailed status, then registers type-specific profiles", async () => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      switch (url) {
-        case "http://pluto:40114/olla/openai/v1/models": return response(discoveredModels);
-        case "http://pluto:40114/olla/models": return response(catalog);
-        case "http://pluto:40114/internal/status/models?detailed=true": return response(detailedStatus);
-        default: throw new Error(`unexpected fetch URL: ${url}`);
-      }
-    });
+  it("makes one public OpenAI models request and registers its catalog with defaults", async () => {
+    fetchSpy.mockResolvedValue(response(discoveredModels));
     const registerProvider = vi.fn();
 
     await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
-    expect(fetchSpy).toHaveBeenCalledWith("http://pluto:40114/olla/models", expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(fetchSpy).toHaveBeenCalledWith("http://pluto:40114/internal/status/models?detailed=true", expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    const models = registerProvider.mock.calls[0]?.[1].models;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledWith("http://127.0.0.1:40114/v1/models", expect.objectContaining({ signal: expect.any(AbortSignal), headers: { Accept: "application/json" } }));
+    expect(registerProvider).toHaveBeenCalledWith("olla", expect.objectContaining({
+      baseUrl: "http://127.0.0.1:40114/v1",
+      apiKey: "no-api-key-needed",
+      models: expect.arrayContaining([
+        expect.objectContaining({ id: "qwen3.8-27b-6000pro" }),
+        expect.objectContaining({ id: "deepseek-v4-flash-dspark" }),
+      ]),
+    }));
+  });
+
+  it("uses settings when OLLA environment variables are absent", async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({ baseUrl: "http://settings.example/gateway", providerName: "settings-olla", apiKey: "settings-key" }));
+    fetchSpy.mockResolvedValue(response(discoveredModels));
+    const registerProvider = vi.fn();
+
+    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+
+    expect(fetchSpy).toHaveBeenCalledWith("http://settings.example/gateway/v1/models", expect.objectContaining({ headers: { Accept: "application/json", Authorization: "Bearer settings-key" } }));
+    expect(registerProvider).toHaveBeenCalledWith("settings-olla", expect.objectContaining({ baseUrl: "http://settings.example/gateway/v1", apiKey: "settings-key" }));
+  });
+
+  it("prefers OLLA environment variables over settings", async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({ baseUrl: "http://settings.example/gateway", providerName: "settings-olla", apiKey: "settings-key" }));
+    process.env.OLLA_BASE_URL = "http://environment.example/gateway/v1";
+    process.env.OLLA_PROVIDER_NAME = "environment-olla";
+    process.env.OLLA_API_KEY = "environment-key";
+    fetchSpy.mockResolvedValue(response(discoveredModels));
+    const registerProvider = vi.fn();
+
+    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+
+    expect(fetchSpy).toHaveBeenCalledWith("http://environment.example/gateway/v1/models", expect.objectContaining({ headers: { Accept: "application/json", Authorization: "Bearer environment-key" } }));
+    expect(registerProvider).toHaveBeenCalledWith("environment-olla", expect.objectContaining({ baseUrl: "http://environment.example/gateway/v1", apiKey: "environment-key" }));
+  });
+
+  it("registers generic metadata with the conservative context fallback", () => {
+    const models = buildRegisteredModels(discoveredModels.data);
+
     expect(models).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "qwen3.8-27b-6000pro",
-        contextWindow: 262144,
-        compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, thinkingFormat: "qwen-chat-template" },
-      }),
-      expect.objectContaining({ id: "deepseek-v4-flash-dspark", contextWindow: 1048576 }),
+      expect.objectContaining({ id: "qwen3.8-27b-6000pro", contextWindow: 262144 }),
+      expect.objectContaining({ id: "deepseek-v4-flash-dspark", contextWindow: 262144 }),
     ]));
-    const ds4 = models.find((model: { id: string }) => model.id === "deepseek-v4-flash-dspark");
-    expect(ds4).not.toHaveProperty("compat");
-    expect(ds4).not.toHaveProperty("thinkingLevelMap");
-    expect(ds4).not.toHaveProperty("thinkingFormat");
-  });
-
-  it.each(["deepseek", undefined])("keeps SGLang base compat and warns when catalog family is %s", async (family) => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      if (url === "http://pluto:40114/olla/openai/v1/models") return response({ object: "list", data: [discoveredModels.data[0]] });
-      if (url === "http://pluto:40114/olla/models") return response([{ id: "qwen3.8-27b-6000pro", olla: { family } }]);
-      return response({ recent_models: [{ name: "qwen3.8-27b-6000pro", type: "sglang" }] });
-    });
-    const registerProvider = vi.fn();
-
-    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
-
-    const model = registerProvider.mock.calls[0]?.[1].models[0];
-    expect(model).toMatchObject({ compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } });
-    expect(model.compat).not.toHaveProperty("thinkingFormat");
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Qwen template control was not applied"));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("retaining SGLang base compatibility"));
-  });
-
-  it("registers models with default compatibility and warnings when detailed status rejects", async () => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      if (url === "http://pluto:40114/olla/openai/v1/models") return response(discoveredModels);
-      if (url === "http://pluto:40114/olla/models") return response(catalog);
-      throw new Error("detailed status unavailable");
-    });
-    const registerProvider = vi.fn();
-
-    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
-
-    const models = registerProvider.mock.calls[0]?.[1].models;
-    expect(models).toHaveLength(2);
-    expect(models[0]).not.toHaveProperty("compat");
-    expect(models[1]).not.toHaveProperty("compat");
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Detailed model status unavailable"));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("qwen3.8-27b-6000pro: no detailed status"));
-  });
-
-  it("registers models with fallback context and warnings when the public catalog rejects", async () => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      if (url === "http://pluto:40114/olla/openai/v1/models") return response(discoveredModels);
-      if (url === "http://pluto:40114/internal/status/models?detailed=true") return response(detailedStatus);
-      throw new Error("catalog unavailable");
-    });
-    const registerProvider = vi.fn();
-
-    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
-
-    const models = registerProvider.mock.calls[0]?.[1].models;
-    expect(models).toHaveLength(2);
-    expect(models[0]).toMatchObject({ contextWindow: 262144, compat: { supportsDeveloperRole: false, supportsReasoningEffort: false } });
-    expect(models[1]).toMatchObject({ contextWindow: 262144 });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Public catalog unavailable"));
-  });
-
-  it.each([undefined, 0, -1, Number.NaN])("uses the fallback context window for invalid catalog context %s", async (maxContext) => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      if (url === "http://pluto:40114/olla/openai/v1/models") return response({ object: "list", data: [discoveredModels.data[0]] });
-      if (url === "http://pluto:40114/olla/models") return response([{ id: "qwen3.8-27b-6000pro", olla: { max_context_length: maxContext } }]);
-      return response({ recent_models: [{ name: "qwen3.8-27b-6000pro", type: "sglang" }] });
-    });
-    const registerProvider = vi.fn();
-
-    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
-
-    expect(registerProvider.mock.calls[0]?.[1].models[0]).toMatchObject({ contextWindow: 262144 });
-  });
-
-  it("keeps Pi defaults and warns for unknown or unavailable backend status", async () => {
-    fetchSpy.mockImplementation(async (url: string) => {
-      if (url === "http://pluto:40114/olla/openai/v1/models") return response(discoveredModels);
-      if (url === "http://pluto:40114/olla/models") return response(catalog);
-      return response({ recent_models: [{ name: "qwen3.8-27b-6000pro", type: "unknown-backend" }] });
-    });
-    const registerProvider = vi.fn();
-
-    await registerOllaProvider({ registerProvider } as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
-
-    const models = registerProvider.mock.calls[0]?.[1].models;
-    expect(models[0]).not.toHaveProperty("compat");
-    expect(models[1]).not.toHaveProperty("compat");
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("qwen3.8-27b-6000pro"));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown backend type"));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("deepseek-v4-flash-dspark"));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no detailed status"));
+    for (const model of models) {
+      expect(model).not.toHaveProperty("compat");
+    }
   });
 });
 
@@ -193,6 +133,6 @@ describe("discoverModels", () => {
 
   it("throws on non-2xx response", async () => {
     fetchSpy.mockResolvedValue(unauthorizedResponse);
-    await expect(discoverModels("http://example.com/v1", "key")).rejects.toThrow("Olla models endpoint returned 401: Unauthorized");
+    await expect(discoverModels("http://example.com/v1", "key")).rejects.toThrow("Gateway models endpoint returned 401: Unauthorized");
   });
 });

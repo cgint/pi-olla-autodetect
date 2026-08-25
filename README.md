@@ -1,35 +1,34 @@
 # pi-olla-autodetect
 
-Pi extension that auto-discovers models from an [Olla](https://github.com/thushan/olla) gateway and registers them as a provider.
+Pi extension that discovers models from an OpenAI-compatible gateway and registers them as a provider. Its `OLLA_*` configuration names are retained for compatibility with existing Olla installations.
 
 ## Why
 
 In a homelab with multiple inference hosts, models start and stop on demand, endpoints change constantly, and maintaining a static `models.json` with dozens of direct provider entries becomes a chore.
 
-**pi-olla-autodetect removes that maintenance burden.** Instead of wiring each backend directly into Pi, you deploy one Olla gateway in front of your inference nodes and let this extension discover whatever models are currently available.
+**pi-olla-autodetect removes that maintenance burden.** Point Pi at one OpenAI-compatible gateway and let this extension discover the public models it exposes.
 
 ```
 ┌──────────────┐
-│  Pi agent    │  ← sees one stable "olla" provider
+│  Pi agent    │  ← sees one stable provider
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│  Olla gateway │  ← handles health checks, failover, routing
+│   Gateway    │  ← owns routing and request adaptation
 └──────┬───────┘
        │
   ┌────┼────┐
   ▼    ▼    ▼
-sparky sparkz twins
+backend backend backend
 ```
 
 ### Benefits
 
-- **One stable endpoint** — Pi points to Olla, not to individual inference hosts
-- **Automatic model discovery** — models appear in Pi as soon as Olla reports them; no `models.json` edits
+- **One stable endpoint** — Pi points to the gateway, not individual inference hosts
+- **Automatic model discovery** — models appear in Pi as soon as the gateway exposes them; no `models.json` edits
 - **No stale entries** — when a model goes away, it disappears from Pi on `/reload`
-- **Health checks handled by Olla** — offline backends are dropped without client-facing errors
-- **Works alongside Open WebUI** — both Pi and Open WebUI can share the same Olla gateway
+- **Gateway-owned adaptation** — routing, backend compatibility, and request adaptation stay at the gateway boundary
 
 ## Install
 
@@ -47,19 +46,15 @@ Then run `/reload`.
 
 ## How It Works
 
-At startup (and on `/reload`), the extension fetches `{baseUrl}/models` from your Olla instance and registers all returned models under an `olla` provider via `pi.registerProvider()`. It reads Olla's public catalog (`/olla/models`) for each model's context window, using a conservative `262,144`-token fallback when catalog context is missing or invalid, and detailed status (`/internal/status/models?detailed=true`) for its configured backend type.
-
-### Backend compatibility
-
-Compatibility follows dynamic Olla metadata, not model IDs or hosts. Every SGLang model receives a compatibility override that sends developer messages as `system` and omits `reasoning_effort`. Template thinking (`chat_template_kwargs.enable_thinking`) is added only when detailed status reports SGLang **and** the public catalog reports `olla.family: "qwen"`. SGLang models with missing or non-Qwen family metadata retain the base override and emit a warning that Qwen template control was not applied. vLLM models, including DS4/DeepSeek, retain Pi's defaults unchanged. Unknown or unavailable status retains Pi defaults and emits a warning.
+At startup (and on `/reload`), the extension fetches exactly `{baseUrl}/models` and registers the returned public OpenAI model catalog via `pi.registerProvider()`. Each registered model uses generic Pi metadata, including a conservative `262,144`-token context-window fallback. The extension does not inspect gateway-private metadata or adapt requests for individual backends.
 
 ## Configuration
 
 | Setting | Env var | Default | Description |
 |---------|---------|---------|-------------|
-| `baseUrl` | `OLLA_BASE_URL` | `http://127.0.0.1:40114` | Olla server URL (any form accepted — host, host+prefix, host+prefix/v1 — normalized to `/v1`) |
-| `providerName` | `OLLA_PROVIDER_NAME` | `olla` | Provider name registered in pi |
-| `apiKey` | `OLLA_API_KEY` | `no-api-key-needed` | API key sent to Olla |
+| `baseUrl` | `OLLA_BASE_URL` | `http://127.0.0.1:40114` | OpenAI-compatible gateway URL (any form accepted — host, host+prefix, host+prefix/v1 — normalized to `/v1`) |
+| `providerName` | `OLLA_PROVIDER_NAME` | `olla` | Provider name registered in Pi |
+| `apiKey` | `OLLA_API_KEY` | `no-api-key-needed` | API key sent to the gateway |
 
 Settings file: `~/.pi/olla/settings.json`
 
@@ -83,12 +78,12 @@ OLLA_BASE_URL=http://pluto:40114/olla/openai/v1
 
 ## Update Model List
 
-Run `/reload` in Pi to re-fetch the model catalogue from Olla.
+Run `/reload` in Pi to re-fetch the public model catalogue from the gateway.
 
 ## Requirements
 
 - pi >= 0.74.0
-- A reachable Olla gateway with `model_registry.enable_unifier: true`
+- A reachable OpenAI-compatible gateway with a public `/v1/models` endpoint
 
 ## License
 
