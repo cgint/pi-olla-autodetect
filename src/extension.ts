@@ -24,6 +24,7 @@ type RegisteredModel = {
   id: string;
   name: string;
   reasoning: boolean;
+  thinkingLevelMap: { off: string };
   input: ("text" | "image")[];
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
   contextWindow: number;
@@ -84,6 +85,7 @@ export function buildRegisteredModels(models: OllaModel[]): RegisteredModel[] {
     id: model.id,
     name: model.id,
     reasoning: true,
+    thinkingLevelMap: { off: "none" },
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,

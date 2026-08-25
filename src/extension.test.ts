@@ -104,6 +104,7 @@ describe("Olla registration", () => {
       expect.objectContaining({ id: "deepseek-v4-flash-dspark", contextWindow: 262144 }),
     ]));
     for (const model of models) {
+      expect(model.thinkingLevelMap).toEqual({ off: "none" });
       expect(model).not.toHaveProperty("compat");
     }
   });
