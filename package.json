@@ -32,7 +32,7 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.74.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@sinclair/typebox": "*"
   },
   "scripts": {
@@ -41,7 +41,7 @@
     "precommit": "tsc --noEmit && vitest run"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@types/node": "^26.2.0",
     "@vitest/runner": "^4.1.10",
     "typescript": "^7.0.2",
